@@ -5,14 +5,21 @@ import random
 
 #logistics vars
 stepCounter = 0
-obstaclesGenerated = False
-falseObstaclesGenerated = False
 
 #position vars
 centerRobX = 200
 centerRobY = 200
 robTheta = 0
 robotRad = 30
+
+#original robot pose, restored after each guess
+origRobX = 200
+origRobY = 200
+origRobTheta = 0
+
+#score counters
+correctCount = 0
+wrongCount = 0
 
 #motion vars
 robotForMotion = 0
@@ -300,21 +307,18 @@ def translateCircles(circles, scaleFactor, choiceCornersX, choiceCornersY):
     
     return scaledTransedCircles
 
-def translateLines(lines, scaleFactor, XtransDiff, YtransDiff):
+def translateLines(lines, scaleFactor, choiceCornersX, choiceCornersY):
     scaledTransedLines = []
 
     for line in lines:
-        xDiff = line[1][0]-line[0][0]
-        xAv = (line[1][0]+line[0][0])/2
-        lineXs = (xAv-xDiff/scaleFactor/2+XtransDiff, 
-                  xAv+xDiff/scaleFactor/2+XtransDiff)
         
-        yDiff = line[1][1]-line[0][1]
-        yAv = (line[1][1]+line[0][1])/2
-        lineYs = ((yAv-yDiff/scaleFactor/2+YtransDiff, 
-                  yAv+yDiff/scaleFactor/2+YtransDiff))
-        scaledLine = ((lineXs[0], lineYs[0]), (lineXs[1], lineYs[1]))
-        scaledTransedLines.append(scaledLine)
+        lineNewStart = mapPoint(line[0][0], line[0][1], scaleFactor,
+                             choiceCornersX, choiceCornersY)
+
+        lineNewEnd = mapPoint(line[1][0], line[1][1], scaleFactor,
+                             choiceCornersX, choiceCornersY)
+
+        scaledTransedLines.append((lineNewStart, lineNewEnd))
     
     return scaledTransedLines
 
@@ -332,7 +336,7 @@ def translateChoices():
 
     scaleFactor = 4
     choicesIndexes = [1, 2, 3]
-    #random.shuffle(choicesIndexes)
+    random.shuffle(choicesIndexes)
     print(choicesIndexes)
     choiceCornersX = 800
     
@@ -367,6 +371,79 @@ def translateChoices():
     #listOfFalseLines2 translation
     listOfFalseLines2 = translateLines(listOfFalseLines2, scaleFactor, 
                                         choiceCornersX, choiceCornersY[2])
+
+
+def resetRound():
+    #restore the robot to its starting pose and build a brand new round:
+    #new true map, new false maps, and freshly translated choices.
+    global centerRobX
+    global centerRobY
+    global robTheta
+    global listOfCircles
+    global listOfLines
+    global listOfFalseCircles1
+    global listOfFalseLines1
+    global listOfFalseCircles2
+    global listOfFalseLines2
+    global lazers
+    global pointsSeen
+
+    #robot back to original pose
+    centerRobX = origRobX
+    centerRobY = origRobY
+    robTheta = origRobTheta
+
+    #clear lazer state
+    lazers = []
+    pointsSeen = []
+
+    #clear all obstacle lists (true + false)
+    listOfCircles.clear()
+    listOfLines.clear()
+    listOfFalseCircles1.clear()
+    listOfFalseLines1.clear()
+    listOfFalseCircles2.clear()
+    listOfFalseLines2.clear()
+
+    #regenerate the arena, the decoys, and the translated choice views
+    genObstacles(listOfCircles, listOfLines, wallDim, centerRobX, centerRobY)
+    genFalseObstacles()
+    translateChoices()
+
+
+def onMousePress(app, mouseX, mouseY):
+    #determine if the click landed inside one of the three choice boxes,
+    #score the guess, then reset for the next round.
+    global correctCount
+    global wrongCount
+    scaleFactor = 4
+
+    choiceCornersX = 800
+    boxSize = wallDim/scaleFactor
+    choiceCornersY = [50, 50+wallDim/3, 50+2*wallDim/3]
+
+    #which screen box (0,1,2) was clicked, if any
+    clickedBox = None
+    for i in range(len(choiceCornersY)):
+        boxX = choiceCornersX
+        boxY = choiceCornersY[i]
+        if (boxX <= mouseX <= boxX + boxSize and
+                boxY <= mouseY <= boxY + boxSize):
+            clickedBox = i
+            break
+
+    if clickedBox == None:
+        return
+
+    #the true map was placed in the box at index choicesIndexes[0]-1
+    correctBox = choicesIndexes[0] - 1
+    if clickedBox == correctBox:
+        correctCount += 1
+    else:
+        wrongCount += 1
+
+    #new robot pose, new map, new choices
+    resetRound()
 
 
 def genLazers():
@@ -477,25 +554,14 @@ def redrawAll(app):
 
     global listOfCircles
     global listOfLines
-    
-    global obstaclesGenerated
-    global falseObstaclesGenerated
-    
-    globalView = True
+
+    global correctCount
+    global wrongCount
+
+    globalView = False
 
     choiceCornersX = 800
     choiceCornersY = [50, 50+wallDim/3, 50+2*wallDim/3]
-
-    if not obstaclesGenerated:
-        genObstacles(listOfCircles, listOfLines, wallDim,
-                 centerRobX, centerRobY)
-        obstaclesGenerated = True
-    
-    if not falseObstaclesGenerated:
-        genFalseObstacles()
-        translateChoices()
-        falseObstaclesGenerated = True
-
 
     if globalView:
         #draw walls
@@ -545,10 +611,17 @@ def redrawAll(app):
             drawCircle(point[0], point[1], 10, 
                         fill ='black', borderWidth = 8)
 
+    #score counters
+    drawLabel(f'Correct: {correctCount}', 1000, 100,
+                size = 20, align = 'left', fill = 'green', bold = True)
+    drawLabel(f'Wrong: {wrongCount}', 1000, 130,
+                size = 20, align = 'left', fill = 'red', bold = True)
+
 
 
 def main():
-    
+    #build the first round before the app starts drawing
+    resetRound()
     runApp()
 
 
