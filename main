@@ -1,0 +1,555 @@
+
+from cmu_graphics import *
+import math
+import random
+
+#logistics vars
+stepCounter = 0
+obstaclesGenerated = False
+falseObstaclesGenerated = False
+
+#position vars
+centerRobX = 200
+centerRobY = 200
+robTheta = 0
+robotRad = 30
+
+#motion vars
+robotForMotion = 0
+robotAngMotion = 0
+
+#lazervars
+lazers = []
+pointsSeen = []
+#walls vars
+wallDim = 600
+wallCoords = [(50, 50), (50+wallDim, 50), 
+                (50, 50+wallDim), (50+wallDim, 50+wallDim)]
+#(circleRad, (circleX, circleY))
+listOfCircles = []
+#((p1x, p1y), (p2x, p2y))
+listOfLines = []
+
+#vars for guesses:
+listOfTrueCircles0 = []
+listOfTrueLines0 = []
+listOfFalseCircles1 = []
+listOfFalseLines1 = []
+listOfFalseCircles2 = []
+listOfFalseLines2 = []
+
+# numbers 1 2 3 in some order
+# index 0 will be the correct choice, 
+# and 1 an 2 will be the respective falses
+choicesIndexes = [] 
+
+def onKeyHold(app, keys):
+
+    global robotForMotion
+    global robotAngMotion
+    
+    #forward
+    if 'up' in keys:
+        robotForMotion = 10
+    if 'right' in keys:
+        robotAngMotion = 10
+    elif 'left' in keys:
+        robotAngMotion = -10
+    #print(f'robTheta: {robTheta} centerRobX: {centerRobX} centerRobY: {centerRobY}')
+
+def onKeyRelease(app, key):
+    global robotForMotion
+    global robotAngMotion
+
+    robotAngMotion = robotForMotion = 0
+def sign(num):
+    if num == 0:
+        return 0
+    elif num > 0:
+        return 1
+    elif num < 0:
+        return -1
+
+def distPointToSegment(px, py, ax, ay, bx, by):
+    #shortest distance from point (px,py) to segment a-b
+    abx = bx - ax
+    aby = by - ay
+    segLenSq = abx*abx + aby*aby
+    if segLenSq == 0:
+        #segment is a point
+        return math.dist((px, py), (ax, ay))
+    #projection factor of the point onto the segment, clamped to [0,1]
+    t = ((px - ax)*abx + (py - ay)*aby) / segLenSq
+    t = max(0, min(1, t))
+    closestX = ax + t*abx
+    closestY = ay + t*aby
+    return math.dist((px, py), (closestX, closestY))
+
+def segmentsIntersect(p1, p2, p3, p4):
+    #True if segment p1-p2 intersects segment p3-p4
+
+    #finds cross product, uses right hand rule to determine orientation
+    def orient(a, b, c):
+        val = (b[1]-a[1])*(c[0]-b[0]) - (b[0]-a[0])*(c[1]-b[1])
+        return sign(val)
+    
+    
+    def onSegment(a, b, c):
+        #c is collinear with a-b; check it lies within the bounds
+        return (min(a[0], b[0]) <= c[0] <= max(a[0], b[0]) and
+                min(a[1], b[1]) <= c[1] <= max(a[1], b[1]))
+
+    o1 = orient(p1, p2, p3)
+    o2 = orient(p1, p2, p4)
+    o3 = orient(p3, p4, p1)
+    o4 = orient(p3, p4, p2)
+
+    #general case: segments straddle each other
+    if o1 != o2 and o3 != o4:
+        return True
+    #special collinear cases
+    if o1 == 0 and onSegment(p1, p2, p3):
+        return True
+    if o2 == 0 and onSegment(p1, p2, p4):
+        return True
+    if o3 == 0 and onSegment(p3, p4, p1):
+        return True
+    if o4 == 0 and onSegment(p3, p4, p2):
+        return True
+    return False
+
+def checkCollisions(Xstep, Ystep):
+    
+    global centerRobX
+    global centerRobY
+    global robotRad
+    global wallCoords
+    
+    #wall bounds (axis-aligned square)
+    leftWall = wallCoords[0], wallCoords[2]
+    topWall = wallCoords[0], wallCoords[1]
+    rightWall = wallCoords[1], wallCoords[3]
+    bottomWall = wallCoords[2], wallCoords[3]
+    walls = [leftWall, topWall, rightWall, bottomWall]
+    
+    #where the robot center would be after this step
+    nextX = centerRobX + Xstep
+    nextY = centerRobY + Ystep
+
+    #robot edge must stay inside all four walls
+    for wall in walls:
+        if distPointToSegment(nextX, nextY, wall[0][0], 
+                            wall[0][1], wall[1][0], wall[1][1]) < robotRad:
+            return True
+
+    #robot must not collide with circles
+    for circle in listOfCircles:
+        #circle format: (circleRad, (circleX, circleY))
+        if robotRad+circle[0] > math.dist(circle[1], (nextX, nextY)):
+            return True
+
+    #robot must not collide with lines
+    for line in listOfLines:
+        if distPointToSegment(nextX, nextY, line[0][0], 
+                                line[0][1], line[1][0], 
+                                line[1][1]) < robotRad:
+            return True
+
+    return False
+
+def robotMove():
+
+    global robotForMotion
+    global robotAngMotion
+    global centerRobX
+    global centerRobY
+    global robTheta
+
+    #calculate x and y motion
+    robotXstep = robotForMotion * math.cos(robTheta/180*math.pi)
+    robotYstep = robotForMotion * math.sin(robTheta/180*math.pi)
+
+
+    #check if colliding with walls
+    if checkCollisions(robotXstep, robotYstep) == False:
+        #move x and y
+        centerRobX += robotXstep
+        centerRobY += robotYstep
+
+    #rotate
+    robTheta += robotAngMotion
+    #print(f'robTheta: {robTheta}')
+    #print(f'robTheta: {robTheta} centerRobX: {centerRobX} centerRobY: {centerRobY}')
+
+def onStep(steps):
+    global stepCounter
+    global lazers
+    stepCounter+=1
+    lazerRate = 1*30 # at 30 fps, lazer every 1 second
+    lazerDrawFor = lazerRate//5 # Only draw lazer for 1/5 lazerRate
+    if (stepCounter % lazerRate == 0):
+        genLazers()
+    elif (stepCounter % lazerRate == lazerDrawFor):
+        lazers = []
+    robotMove()
+
+
+def genObstacles(listOfCircles, listOfLines, wallDim, centerRobX, centerRobY):
+
+    #choose number of each obstacle
+    totalObstacles = 3
+    numCircles = random.randint(0,3)
+    numLines = totalObstacles - numCircles
+    
+    print(numCircles)
+
+    #create circles
+    circlesDimRange = (25, 100) #min and max range
+
+    while len(listOfCircles) < numCircles:
+        circleRad = random.randint(25, 100) #upper and lower bounds of size
+        circleCoordRange = [50+circleRad, 50+wallDim-circleRad]
+        circlePos = [random.randint(circleCoordRange[0], circleCoordRange[1]),
+                    random.randint(circleCoordRange[0], circleCoordRange[1])]
+       
+        ###check if preexisting overlaps
+        overlap = False
+        #circle overlaps
+        if robotRad+circleRad > math.dist(circlePos, (centerRobX, centerRobY)):
+            overlap = True
+        else:    
+            for circle in listOfCircles:
+                print(f'newcirclePose: {circlePos}, oldcirclePos: {circle[1]}')
+                print(f'rad1: {circle[0]}, rad2: {circleRad}')
+                if circle[0]+circleRad > math.dist(circlePos, circle[1]):
+                    overlap = True
+        
+        if not overlap:
+            listOfCircles.append((circleRad, circlePos))
+
+    #create lines
+    #keep endpoints inside the walls (with a small margin)
+    margin = 10
+    lineCoordRange = [50 + margin, 50 + wallDim - margin]
+    minLineLen = 50 #avoid tiny/degenerate lines
+
+    attempts = 0
+    maxAttempts = 1000
+    while len(listOfLines) < numLines and attempts < maxAttempts:
+        attempts += 1
+
+        p1 = (random.randint(lineCoordRange[0], lineCoordRange[1]),
+                random.randint(lineCoordRange[0], lineCoordRange[1]))
+        p2 = (random.randint(lineCoordRange[0], lineCoordRange[1]),
+                random.randint(lineCoordRange[0], lineCoordRange[1]))
+
+        #reject degenerate / too-short lines
+        if math.dist(p1, p2) < minLineLen:
+            continue
+
+        ###check if preexisting overlaps
+        overlap = False
+
+        #line passes through robot
+        if distPointToSegment(centerRobX, centerRobY,
+                                p1[0], p1[1], p2[0], p2[1]) < robotRad:
+            overlap = True
+
+        #line passes through a circle
+        for circle in listOfCircles:
+            circleRad = circle[0]
+            circlePos = circle[1]
+            if distPointToSegment(circlePos[0], circlePos[1],
+                                    p1[0], p1[1], p2[0], p2[1]) < circleRad:
+                overlap = True
+                break
+
+        #line crosses another line
+        if not overlap:
+            for line in listOfLines:
+                if segmentsIntersect(p1, p2, line[0], line[1]):
+                    overlap = True
+                    break
+
+        if not overlap:
+            listOfLines.append((p1, p2))
+
+def genFalseObstacles():
+    
+    global listOfFalseCircles1
+    global listOfFalseLines1
+    global listOfFalseCircles2
+    global listOfFalseLines2
+
+    genObstacles(listOfFalseCircles1, listOfFalseLines1, wallDim, centerRobX, centerRobY)
+    
+    genObstacles(listOfFalseCircles2, listOfFalseLines2, wallDim, centerRobX, centerRobY)
+
+def mapPoint(x, y, scaleFactor, boxX, boxY):
+    return (boxX + (x - 50) / scaleFactor,
+            boxY + (y - 50) / scaleFactor)
+
+def translateCircles(circles, scaleFactor, choiceCornersX, choiceCornersY):
+    scaledTransedCircles = []
+    for circle in circles:
+        
+        circleRad = circle[0]/scaleFactor
+        circlePos = mapPoint(circle[1][0], circle[1][1], scaleFactor,
+                             choiceCornersX, choiceCornersY)
+        scaledTransedCircles.append((circleRad, circlePos))
+    
+    return scaledTransedCircles
+
+def translateLines(lines, scaleFactor, XtransDiff, YtransDiff):
+    scaledTransedLines = []
+
+    for line in lines:
+        xDiff = line[1][0]-line[0][0]
+        xAv = (line[1][0]+line[0][0])/2
+        lineXs = (xAv-xDiff/scaleFactor/2+XtransDiff, 
+                  xAv+xDiff/scaleFactor/2+XtransDiff)
+        
+        yDiff = line[1][1]-line[0][1]
+        yAv = (line[1][1]+line[0][1])/2
+        lineYs = ((yAv-yDiff/scaleFactor/2+YtransDiff, 
+                  yAv+yDiff/scaleFactor/2+YtransDiff))
+        scaledLine = ((lineXs[0], lineYs[0]), (lineXs[1], lineYs[1]))
+        scaledTransedLines.append(scaledLine)
+    
+    return scaledTransedLines
+
+
+def translateChoices():
+
+    global listOfTrueCircles0
+    global listOfTrueLines0
+    global listOfFalseCircles1
+    global listOfFalseLines1
+    global listOfFalseCircles2
+    global listOfFalseLines2
+    global choicesIndexes
+    global wallDim
+
+    scaleFactor = 4
+    choicesIndexes = [1, 2, 3]
+    #random.shuffle(choicesIndexes)
+    print(choicesIndexes)
+    choiceCornersX = 800
+    
+    choiceCornersY = [50, 50+wallDim/3, 50+2*wallDim/3]
+    
+    #set the corners to the same order as the choices
+    choiceCornersY = [choiceCornersY[choicesIndexes[0]-1],
+                     choiceCornersY[choicesIndexes[1]-1],
+                     choiceCornersY[choicesIndexes[2]-1]]
+
+    
+    #listOfTrueCircles0 translation
+    listOfTrueCircles0 = translateCircles(listOfCircles, scaleFactor, 
+                                        choiceCornersX, choiceCornersY[0])
+    
+    #listOfTrueLines0 translation
+    listOfTrueLines0 = translateLines(listOfLines, scaleFactor, 
+                                        choiceCornersX, choiceCornersY[0])
+
+    #listOfFalseCircles1 translation
+    listOfFalseCircles1 = translateCircles(listOfFalseCircles1, scaleFactor, 
+                                        choiceCornersX, choiceCornersY[1])
+    
+    #listOfFalseLines1 translation
+    listOfFalseLines1 = translateLines(listOfFalseLines1, scaleFactor, 
+                                        choiceCornersX, choiceCornersY[1])
+
+    #listOfFalseCircles2 translation
+    listOfFalseCircles2 = translateCircles(listOfFalseCircles2, scaleFactor, 
+                                        choiceCornersX, choiceCornersY[2])
+    
+    #listOfFalseLines2 translation
+    listOfFalseLines2 = translateLines(listOfFalseLines2, scaleFactor, 
+                                        choiceCornersX, choiceCornersY[2])
+
+
+def genLazers():
+    
+    global centerRobX
+    global centerRobY
+    global robTheta
+    global robotRad
+    global wallCoords
+    global lazers
+    global pointsSeen
+    
+    numLazers = 5
+    pointsMax = 128
+    #(x, y)
+    lazerOrigin =  (centerRobX + robotRad*math.cos((robTheta)/180*math.pi), 
+            centerRobY + robotRad*math.sin((robTheta)/180*math.pi))
+    directions = [-30, -15,  0, 15, 30]
+
+    #build the list of segment obstacles: the four walls plus every line obstacle
+    leftWall = (wallCoords[0], wallCoords[2])
+    topWall = (wallCoords[0], wallCoords[1])
+    rightWall = (wallCoords[1], wallCoords[3])
+    bottomWall = (wallCoords[2], wallCoords[3])
+    segmentObstacles = [leftWall, topWall, rightWall, bottomWall] + listOfLines
+
+    #distance from the ray origin to the ray's first hit on segment a-b.
+    #ray is origin + t*(dx,dy) for t >= 0; returns None if no forward hit.
+    def rayHitSegment(ox, oy, dx, dy, ax, ay, bx, by):
+        #segment direction
+        sx = bx - ax
+        sy = by - ay
+        #solve  origin + t*d = a + u*s   for t (ray) and u (segment in [0,1])
+        denom = dx*sy - dy*sx
+        if denom == 0:
+            #ray and segment are parallel
+            return None
+        t = ((ax - ox)*sy - (ay - oy)*sx) / denom
+        u = ((ax - ox)*dy - (ay - oy)*dx) / denom
+        if t >= 0 and 0 <= u <= 1:
+            return t
+        return None
+
+    #distance from the ray origin to the ray's first hit on a circle.
+    #d is assumed to be a unit vector; returns None if no forward hit.
+    def rayHitCircle(ox, oy, dx, dy, cx, cy, r):
+        #vector from origin to circle center
+        fx = ox - cx
+        fy = oy - cy
+        a = dx*dx + dy*dy
+        b = 2*(fx*dx + fy*dy)
+        c = fx*fx + fy*fy - r*r
+        disc = b*b - 4*a*c
+        if disc < 0:
+            #ray misses the circle entirely
+            return None
+        sqrtDisc = math.sqrt(disc)
+        t1 = (-b - sqrtDisc) / (2*a)
+        t2 = (-b + sqrtDisc) / (2*a)
+        #prefer the nearest non-negative intersection
+        for t in (t1, t2):
+            if t >= 0:
+                return t
+        return None
+
+    for direction in directions:
+        #unit direction of this ray
+        angle = (robTheta + direction) / 180 * math.pi
+        dx = math.cos(angle)
+        dy = math.sin(angle)
+        ox, oy = lazerOrigin
+
+        #find the closest forward hit distance across all obstacles
+        closestT = None
+
+        for seg in segmentObstacles:
+            t = rayHitSegment(ox, oy, dx, dy,
+                                seg[0][0], seg[0][1], seg[1][0], seg[1][1])
+            if t != None and (closestT == None or t < closestT):
+                closestT = t
+
+        for circle in listOfCircles:
+            #circle format: (circleRad, (circleX, circleY))
+            t = rayHitCircle(ox, oy, dx, dy,
+                                circle[1][0], circle[1][1], circle[0])
+            if t != None and (closestT == None or t < closestT):
+                closestT = t
+
+        #endpoint of the lazer is the closest hit (there is always a wall)
+        if closestT != None:
+            endX = ox + closestT*dx
+            endY = oy + closestT*dy
+            lazers.append((lazerOrigin, (endX, endY)))
+            pointsSeen.append((endX, endY))
+        
+    if len(pointsSeen) > pointsMax:
+        pointsSeen = pointsSeen[5:]
+
+def redrawAll(app):
+    
+    global centerRobX
+    global centerRobY
+    global robTheta
+    global wallDim
+    global robotRad
+    global lazers 
+    global pointsSeen
+
+    global listOfCircles
+    global listOfLines
+    
+    global obstaclesGenerated
+    global falseObstaclesGenerated
+    
+    globalView = True
+
+    choiceCornersX = 800
+    choiceCornersY = [50, 50+wallDim/3, 50+2*wallDim/3]
+
+    if not obstaclesGenerated:
+        genObstacles(listOfCircles, listOfLines, wallDim,
+                 centerRobX, centerRobY)
+        obstaclesGenerated = True
+    
+    if not falseObstaclesGenerated:
+        genFalseObstacles()
+        translateChoices()
+        falseObstaclesGenerated = True
+
+
+    if globalView:
+        #draw walls
+        drawRect(50, 50, wallDim, wallDim, fill = 'white', border = 'black', borderWidth = 10)
+
+        #draw obstacles
+        for circle in listOfCircles:
+            drawCircle(circle[1][0], circle[1][1], circle[0], 
+                        fill='white', border='black', borderWidth = 5)
+
+        for line in listOfLines:
+            drawLine(line[0][0], line[0][1], line[1][0], line[1][1],
+                        fill='black', lineWidth = 5)
+
+    ##### draw choices
+
+    # choicesBoxes 
+    for choiceCornerY in choiceCornersY:
+        drawRect(choiceCornersX, choiceCornerY, wallDim/4, wallDim/4, fill = 'white', border = 'black', borderWidth = 2.5)
+
+    # map choices
+    circlesToDraw = listOfTrueCircles0 + listOfFalseCircles1 + listOfFalseCircles2
+    linesToDraw = listOfTrueLines0 + listOfFalseLines1 + listOfFalseLines2
+    print('line:', linesToDraw)
+    for circle in circlesToDraw:
+        drawCircle(circle[1][0], circle[1][1], circle[0], 
+                        fill='white', border='black', borderWidth = 1.25)
+
+    for line in linesToDraw:
+        drawLine(line[0][0], line[0][1], line[1][0], line[1][1],
+                        fill='black', lineWidth = 1.25)
+
+    # draw robot
+    drawRegularPolygon(centerRobX, centerRobY, robotRad, 8, 
+                        fill = 'green', border = 'black', borderWidth = 5,
+                        rotateAngle = robTheta+22.5)
+    drawLine(centerRobX, centerRobY, 
+            centerRobX + robotRad*math.cos((robTheta)/180*math.pi), 
+            centerRobY + robotRad*math.sin((robTheta)/180*math.pi))
+
+    #draw lazers
+    for lazer in lazers: 
+            drawLine(lazer[0][0], lazer[0][1], lazer[1][0], lazer[1][1],
+                     fill = 'red')
+
+    for point in pointsSeen:
+            drawCircle(point[0], point[1], 10, 
+                        fill ='black', borderWidth = 8)
+
+
+
+def main():
+    
+    runApp()
+
+
+main()
