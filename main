@@ -30,8 +30,9 @@ lazers = []
 pointsSeen = []
 #walls vars
 wallDim = 600
-wallCoords = [(50, 50), (50+wallDim, 50), 
-                (50, 50+wallDim), (50+wallDim, 50+wallDim)]
+wallOffset = 50
+wallCoords = [(wallOffset, wallOffset), (wallOffset+wallDim, wallOffset), 
+                (wallOffset, wallOffset+wallDim), (wallOffset+wallDim, wallOffset+wallDim)]
 #(circleRad, (circleX, circleY))
 listOfCircles = []
 #((p1x, p1y), (p2x, p2y))
@@ -44,7 +45,7 @@ listOfFalseCircles1 = []
 listOfFalseLines1 = []
 listOfFalseCircles2 = []
 listOfFalseLines2 = []
-
+scaleFactor = 4
 # numbers 1 2 3 in some order
 # index 0 will be the correct choice, 
 # and 1 an 2 will be the respective falses
@@ -208,14 +209,14 @@ def genObstacles(listOfCircles, listOfLines, wallDim, centerRobX, centerRobY):
     numCircles = random.randint(0,3)
     numLines = totalObstacles - numCircles
     
-    print(numCircles)
+    #print(numCircles)
 
     #create circles
     circlesDimRange = (25, 100) #min and max range
 
     while len(listOfCircles) < numCircles:
         circleRad = random.randint(25, 100) #upper and lower bounds of size
-        circleCoordRange = [50+circleRad, 50+wallDim-circleRad]
+        circleCoordRange = [wallOffset+circleRad, wallOffset+wallDim-circleRad]
         circlePos = [random.randint(circleCoordRange[0], circleCoordRange[1]),
                     random.randint(circleCoordRange[0], circleCoordRange[1])]
        
@@ -237,7 +238,7 @@ def genObstacles(listOfCircles, listOfLines, wallDim, centerRobX, centerRobY):
     #create lines
     #keep endpoints inside the walls (with a small margin)
     margin = 10
-    lineCoordRange = [50 + margin, 50 + wallDim - margin]
+    lineCoordRange = [wallOffset + margin, wallOffset + wallDim - margin]
     minLineLen = 50 #avoid tiny/degenerate lines
 
     attempts = 0
@@ -292,36 +293,35 @@ def genFalseObstacles():
     
     genObstacles(listOfFalseCircles2, listOfFalseLines2, wallDim, centerRobX, centerRobY)
 
-def mapPoint(x, y, scaleFactor, boxX, boxY):
-    return (boxX + (x - 50) / scaleFactor,
-            boxY + (y - 50) / scaleFactor)
+def mapPoint(x, y, boxX, boxY):
+    return (boxX + (x - wallOffset) / scaleFactor,
+            boxY + (y - wallOffset) / scaleFactor)
 
-def translateCircles(circles, scaleFactor, choiceCornersX, choiceCornersY):
+def translateCircles(circles, choiceCornersX, choiceCornersY):
     scaledTransedCircles = []
     for circle in circles:
         
         circleRad = circle[0]/scaleFactor
-        circlePos = mapPoint(circle[1][0], circle[1][1], scaleFactor,
+        circlePos = mapPoint(circle[1][0], circle[1][1],
                              choiceCornersX, choiceCornersY)
         scaledTransedCircles.append((circleRad, circlePos))
     
     return scaledTransedCircles
 
-def translateLines(lines, scaleFactor, choiceCornersX, choiceCornersY):
+def translateLines(lines, choiceCornersX, choiceCornersY):
     scaledTransedLines = []
 
     for line in lines:
         
-        lineNewStart = mapPoint(line[0][0], line[0][1], scaleFactor,
+        lineNewStart = mapPoint(line[0][0], line[0][1],
                              choiceCornersX, choiceCornersY)
 
-        lineNewEnd = mapPoint(line[1][0], line[1][1], scaleFactor,
+        lineNewEnd = mapPoint(line[1][0], line[1][1],
                              choiceCornersX, choiceCornersY)
 
         scaledTransedLines.append((lineNewStart, lineNewEnd))
     
     return scaledTransedLines
-
 
 def translateChoices():
 
@@ -334,42 +334,40 @@ def translateChoices():
     global choicesIndexes
     global wallDim
 
-    scaleFactor = 4
     choicesIndexes = [1, 2, 3]
     random.shuffle(choicesIndexes)
     print(choicesIndexes)
     choiceCornersX = 800
     
-    choiceCornersY = [50, 50+wallDim/3, 50+2*wallDim/3]
+    choiceCornersY = [wallOffset, wallOffset+wallDim/3, wallOffset+2*wallDim/3]
     
     #set the corners to the same order as the choices
     choiceCornersY = [choiceCornersY[choicesIndexes[0]-1],
                      choiceCornersY[choicesIndexes[1]-1],
                      choiceCornersY[choicesIndexes[2]-1]]
 
-    
     #listOfTrueCircles0 translation
-    listOfTrueCircles0 = translateCircles(listOfCircles, scaleFactor, 
+    listOfTrueCircles0 = translateCircles(listOfCircles, 
                                         choiceCornersX, choiceCornersY[0])
     
     #listOfTrueLines0 translation
-    listOfTrueLines0 = translateLines(listOfLines, scaleFactor, 
+    listOfTrueLines0 = translateLines(listOfLines, 
                                         choiceCornersX, choiceCornersY[0])
 
     #listOfFalseCircles1 translation
-    listOfFalseCircles1 = translateCircles(listOfFalseCircles1, scaleFactor, 
+    listOfFalseCircles1 = translateCircles(listOfFalseCircles1, 
                                         choiceCornersX, choiceCornersY[1])
     
     #listOfFalseLines1 translation
-    listOfFalseLines1 = translateLines(listOfFalseLines1, scaleFactor, 
+    listOfFalseLines1 = translateLines(listOfFalseLines1, 
                                         choiceCornersX, choiceCornersY[1])
 
     #listOfFalseCircles2 translation
-    listOfFalseCircles2 = translateCircles(listOfFalseCircles2, scaleFactor, 
+    listOfFalseCircles2 = translateCircles(listOfFalseCircles2, 
                                         choiceCornersX, choiceCornersY[2])
     
     #listOfFalseLines2 translation
-    listOfFalseLines2 = translateLines(listOfFalseLines2, scaleFactor, 
+    listOfFalseLines2 = translateLines(listOfFalseLines2, 
                                         choiceCornersX, choiceCornersY[2])
 
 
@@ -394,8 +392,8 @@ def resetRound():
     robTheta = origRobTheta
 
     #clear lazer state
-    lazers = []
-    pointsSeen = []
+    lazers.clear()
+    pointsSeen.clear()
 
     #clear all obstacle lists (true + false)
     listOfCircles.clear()
@@ -416,11 +414,10 @@ def onMousePress(app, mouseX, mouseY):
     #score the guess, then reset for the next round.
     global correctCount
     global wrongCount
-    scaleFactor = 4
 
     choiceCornersX = 800
     boxSize = wallDim/scaleFactor
-    choiceCornersY = [50, 50+wallDim/3, 50+2*wallDim/3]
+    choiceCornersY = [wallOffset, wallOffset+wallDim/3, wallOffset+2*wallDim/3]
 
     #which screen box (0,1,2) was clicked, if any
     clickedBox = None
@@ -457,7 +454,7 @@ def genLazers():
     global pointsSeen
     
     numLazers = 5
-    pointsMax = 128
+    pointsMax = 100
     #(x, y)
     lazerOrigin =  (centerRobX + robotRad*math.cos((robTheta)/180*math.pi), 
             centerRobY + robotRad*math.sin((robTheta)/180*math.pi))
@@ -476,6 +473,7 @@ def genLazers():
         #segment direction
         sx = bx - ax
         sy = by - ay
+        
         #solve  origin + t*d = a + u*s   for t (ray) and u (segment in [0,1])
         denom = dx*sy - dy*sx
         if denom == 0:
@@ -493,6 +491,10 @@ def genLazers():
         #vector from origin to circle center
         fx = ox - cx
         fy = oy - cy
+
+        # solves for the quadradic created by solving for 
+        # a t that scales f in the direction of d until it is
+        #r^2 away from the center ( aka on the circle)
         a = dx*dx + dy*dy
         b = 2*(fx*dx + fy*dy)
         c = fx*fx + fy*fy - r*r
@@ -558,14 +560,15 @@ def redrawAll(app):
     global correctCount
     global wrongCount
 
-    globalView = False
+    #debug
+    globalView = True
 
     choiceCornersX = 800
-    choiceCornersY = [50, 50+wallDim/3, 50+2*wallDim/3]
+    choiceCornersY = [wallOffset, wallOffset+wallDim/3, wallOffset+2*wallDim/3]
 
     if globalView:
         #draw walls
-        drawRect(50, 50, wallDim, wallDim, fill = 'white', border = 'black', borderWidth = 10)
+        drawRect(wallOffset, wallOffset, wallDim, wallDim, fill = 'white', border = 'black', borderWidth = 10)
 
         #draw obstacles
         for circle in listOfCircles:
@@ -580,7 +583,7 @@ def redrawAll(app):
 
     # choicesBoxes 
     for choiceCornerY in choiceCornersY:
-        drawRect(choiceCornersX, choiceCornerY, wallDim/4, wallDim/4, fill = 'white', border = 'black', borderWidth = 2.5)
+        drawRect(choiceCornersX, choiceCornerY, wallDim/scaleFactor, wallDim/scaleFactor, fill = 'white', border = 'black', borderWidth = 2.5)
 
     # map choices
     circlesToDraw = listOfTrueCircles0 + listOfFalseCircles1 + listOfFalseCircles2
@@ -616,8 +619,6 @@ def redrawAll(app):
                 size = 20, align = 'left', fill = 'green', bold = True)
     drawLabel(f'Wrong: {wrongCount}', 1000, 130,
                 size = 20, align = 'left', fill = 'red', bold = True)
-
-
 
 def main():
     #build the first round before the app starts drawing
